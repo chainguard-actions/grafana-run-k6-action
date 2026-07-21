@@ -1,0 +1,1 @@
+# grafana-run-k6-action
