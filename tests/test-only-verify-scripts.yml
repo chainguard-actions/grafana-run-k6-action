@@ -1,0 +1,47 @@
+name: Test only-verify-scripts skips execution
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Install k6
+        run: |
+          set -e
+          case "$(uname -m)" in
+            x86_64) ARCH=amd64 ;;
+            aarch64|arm64) ARCH=arm64 ;;
+            *) echo "unsupported arch"; exit 1 ;;
+          esac
+          V=v1.0.0
+          curl -sSfL -o /tmp/k6.tgz "https://github.com/grafana/k6/releases/download/$V/k6-$V-linux-$ARCH.tar.gz"
+          tar -xzf /tmp/k6.tgz -C /tmp
+          mkdir -p "$HOME/k6bin"
+          mv "/tmp/k6-$V-linux-$ARCH/k6" "$HOME/k6bin/k6"
+          echo "$HOME/k6bin" >> "$GITHUB_PATH"
+          "$HOME/k6bin/k6" version
+          rm -f "$GITHUB_WORKSPACE"/k6-result-*.txt
+      - id: action
+        uses: .
+        with:
+          path: |
+            tests/fixtures/k6/*.js
+            tests/fixtures/k6-invalid/*.js
+          only-verify-scripts: "true"
+          disable-analytics: "true"
+      - name: Assert verification succeeded without running tests
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          if [ "$OUTCOME" != "success" ]; then
+            echo "FAIL: expected success (valid scripts present)"
+            exit 1
+          fi
+          if ls "$GITHUB_WORKSPACE"/k6-result-*.txt >/dev/null 2>&1; then
+            echo "FAIL: tests were executed despite only-verify-scripts"
+            ls "$GITHUB_WORKSPACE"/k6-result-*.txt
+            exit 1
+          fi
+          echo "PASS"
